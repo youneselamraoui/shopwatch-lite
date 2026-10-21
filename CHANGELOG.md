@@ -3,3 +3,4 @@
 ## [0.1.0]
 - Squelette du projet : contrat, agents vides, workflow, demo.
 aymen : ajout test analyse
+- Younes : ajout du module de collecte
