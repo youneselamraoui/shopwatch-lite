@@ -3,7 +3,7 @@ from src.contrat import FICHES
 
 def _traiter(sig, vus, compteur, registre, base):
  if analyse.est_repete(sig, vus):
- return None
+  return None
  nb = analyse.compter_incidents(sig, compteur)
  diag = analyse.diagnostiquer(sig, base, nb)
  msg = notification.diffuser(sig, diag, registre)
