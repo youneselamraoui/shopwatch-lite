@@ -2,58 +2,54 @@
 
 
 def est_repete(sig: Signal, vus: set) -> bool:
-    """
-    Vérifie si un signal a déjà été traité.
-    Utilise l'id du signal (ou le tuple service/texte) comme clé unique.
-    """
-    # Clé unique basée sur l'ID du signal
-    cle = sig.id if hasattr(sig, "id") else (sig.service, sig.texte)
-    
+    """Un signal est répété si (service, texte) a déjà été vu."""
+    cle = (sig.service, sig.texte)
     if cle in vus:
         return True
-    
     vus.add(cle)
     return False
 
 
 def compter_incidents(sig: Signal, compteur: dict) -> int:
-    """
-    Incrémente et retourne le nombre d'incidents pour un service donné.
-    """
-    cle = sig.service
-    compteur[cle] = compteur.get(cle, 0) + 1
-    return compteur[cle]
+    """Incrémente et retourne le nombre d'incidents pour le service."""
+    compteur[sig.service] = compteur.get(sig.service, 0) + 1
+    return compteur[sig.service]
 
 
-def chercher_fiches(sig: Signal, base: dict) -> list:
-    """
-    Recherche les fiches d'intervention associées au service ou à la catégorie.
-    """
-    if hasattr(sig, "service") and sig.service in base:
-        return base[sig.service]
-    if hasattr(sig, "categorie") and sig.categorie in base:
-        return base[sig.categorie]
-    return base.get("default", [])
+def chercher_fiches(sig: Signal, base) -> list:
+    """Retourne les fiches associées à la catégorie du signal."""
+    if isinstance(base, dict):
+        fiches = base.get(sig.categorie, base.get(sig.service, []))
+        return fiches if isinstance(fiches, list) else [fiches]
+    return [f for f in base if getattr(f, "categorie", None) == sig.categorie]
 
 
 def evaluer(sig: Signal, nb_incidents: int = 0) -> str:
-    """
-    Passe en BLOQUANT à partir de 4 incidents, sinon conserve la gravité d'origine.
-    """
+    """BLOQUANT à partir de 4 incidents, sinon gravité d'origine."""
     if nb_incidents >= 4:
         return "BLOQUANT"
     return sig.gravite
 
 
-def diagnostiquer(sig: Signal, base: dict, nb_incidents: int = 0) -> Diagnostic:
-    """
-    Génère le diagnostic complet.
-    """
-    gravite_finale = evaluer(sig, nb_incidents)
+def diagnostiquer(sig: Signal, base, nb_incidents: int = 0) -> Diagnostic:
+    niveau = evaluer(sig, nb_incidents)
     fiches = chercher_fiches(sig, base)
+    fiche = fiches[0] if fiches else None
+
+    if isinstance(fiche, dict):
+        cause = fiche.get("cause", "cause inconnue")
+        action = fiche.get("action", "escalader a l'astreinte")
+    else:
+        cause = getattr(fiche, "cause", "cause inconnue")
+        action = getattr(fiche, "action", "escalader a l'astreinte")
+
+    critique = niveau in ("BLOQUANT", "CRITIQUE")
+
     return Diagnostic(
-        signal=sig,
-        gravite=gravite_finale,
-        fiches=fiches,
-        occurrences=nb_incidents
+        signal_ref=sig.ref,
+        niveau=niveau,
+        cause=cause,
+        action=action,
+        critique=critique,
+        origines=[sig.origine],
     )
