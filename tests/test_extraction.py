@@ -1,6 +1,7 @@
 import unittest
 from src.extraction import masquer_donnees, lire_journal, lire_scan, lire_build
 
+
 class TestMasquerDonnees(unittest.TestCase):
     def test_remplace_password(self):
         s = 'client=bob pwd=abc123'
@@ -13,6 +14,13 @@ class TestMasquerDonnees(unittest.TestCase):
     def test_separateur_colon(self):
         s = 'card:4970123412341234'
         self.assertEqual(masquer_donnees(s), 'card:[MASQUE]')
+
+    def test_masque_jeton_bearer(self):
+        s = 'Authorization: Bearer eyJhbGciOi.abc123'
+        resultat = masquer_donnees(s)
+        self.assertNotIn('eyJhbGciOi', resultat)
+        self.assertIn('[MASQUE]', resultat)
+
 
 class TestLireJournal(unittest.TestCase):
     def test_parsing_base(self):
@@ -39,6 +47,7 @@ class TestLireJournal(unittest.TestCase):
         with self.assertRaises(ValueError):
             lire_journal('2026-11-27', 1)
 
+
 class TestLireScan(unittest.TestCase):
     def test_scan_critique(self):
         rapport = {'id_faille': 'CVE-1', 'paquet': 'lib', 'risque': 'critique', 'date': '2026-01-01T00:00:00Z'}
@@ -52,6 +61,7 @@ class TestLireScan(unittest.TestCase):
     def test_scan_cle_manquante(self):
         with self.assertRaises(ValueError):
             lire_scan({'id_faille': 'x'}, 1)
+
 
 class TestLireBuild(unittest.TestCase):
     def test_build_echec(self):
@@ -67,3 +77,7 @@ class TestLireBuild(unittest.TestCase):
         sig = lire_build(rapport, 3)
         self.assertEqual(sig.categorie, 'BUILD_OK')
         self.assertEqual(sig.gravite, 'MINEUR')
+
+
+if __name__ == '__main__':
+    unittest.main()
