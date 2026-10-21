@@ -20,7 +20,7 @@ class TestLireJournal(unittest.TestCase):
         sig = lire_journal(ligne, 42)
         self.assertEqual(sig.ref, 'SH-0042')
         self.assertEqual(sig.date, '2026-11-27T17:02:11Z')
-        self.assertEqual(sig.service, 'paiement')
+        self.assertEqual(sig.servi ce, 'paiement')
         self.assertEqual(sig.categorie, 'JOURNAL')
         self.assertEqual(sig.gravite, 'MAJEUR')
         self.assertIn('card=[MASQUE]', sig.texte)
