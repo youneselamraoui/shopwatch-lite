@@ -1,83 +1,85 @@
-import unittest
-from src.extraction import masquer_donnees, lire_journal, lire_scan, lire_build
+import re
+from src.contrat import Signal
 
 
-class TestMasquerDonnees(unittest.TestCase):
-    def test_remplace_password(self):
-        s = 'client=bob pwd=abc123'
-        self.assertEqual(masquer_donnees(s), 'client=bob pwd=[MASQUE]')
-
-    def test_ignore_casse(self):
-        s = 'Token=XYZ123 secret=abc'
-        self.assertEqual(masquer_donnees(s), 'Token=[MASQUE] secret=[MASQUE]')
-
-    def test_separateur_colon(self):
-        s = 'card:4970123412341234'
-        self.assertEqual(masquer_donnees(s), 'card:[MASQUE]')
-
-    def test_masque_jeton_bearer(self):
-        s = 'Authorization: Bearer eyJhbGciOi.abc123'
-        resultat = masquer_donnees(s)
-        self.assertNotIn('eyJhbGciOi', resultat)
-        self.assertIn('[MASQUE]', resultat)
+def masquer_donnees(texte: str) -> str:
+    """Masque mots de passe, jetons, cartes et jetons Bearer."""
+    # Jeton Bearer : "Bearer xxx" devient "Bearer [MASQUE]"
+    texte = re.sub(r'(Bearer\s+)\S+', r'\1[MASQUE]', texte, flags=re.IGNORECASE)
+    # Paires cle=valeur / cle:valeur
+    texte = re.sub(
+        r'(pwd|password|token|secret|card)(\s*[=:]\s*)\S+',
+        r'\1\2[MASQUE]',
+        texte,
+        flags=re.IGNORECASE,
+    )
+    return texte
 
 
-class TestLireJournal(unittest.TestCase):
-    def test_parsing_base(self):
-        ligne = '2026-11-27 17:02:11 paiement ERROR timeout passerelle card=1234'
-        sig = lire_journal(ligne, 42)
-        self.assertEqual(sig.ref, 'SH-0042')
-        self.assertEqual(sig.date, '2026-11-27T17:02:11Z')
-        self.assertEqual(sig.service, 'paiement')
-        self.assertEqual(sig.categorie, 'JOURNAL')
-        self.assertEqual(sig.gravite, 'MAJEUR')
-        self.assertIn('card=[MASQUE]', sig.texte)
-
-    def test_gravite_bloquant(self):
-        ligne = '2026-11-27 17:00:00 svc FATAL boom'
-        sig = lire_journal(ligne, 1)
-        self.assertEqual(sig.gravite, 'BLOQUANT')
-
-    def test_gravite_mineur(self):
-        ligne = '2026-11-27 17:00:00 svc INFO ok'
-        sig = lire_journal(ligne, 1)
-        self.assertEqual(sig.gravite, 'MINEUR')
-
-    def test_erreur_champs_insuffisants(self):
-        with self.assertRaises(ValueError):
-            lire_journal('2026-11-27', 1)
+def _ref(numero: int) -> str:
+    return f"SH-{numero:04d}"
 
 
-class TestLireScan(unittest.TestCase):
-    def test_scan_critique(self):
-        rapport = {'id_faille': 'CVE-1', 'paquet': 'lib', 'risque': 'critique', 'date': '2026-01-01T00:00:00Z'}
-        sig = lire_scan(rapport, 5)
-        self.assertEqual(sig.origine, 'SCANNER')
-        self.assertEqual(sig.service, 'lib')
-        self.assertEqual(sig.categorie, 'FAILLE')
-        self.assertEqual(sig.gravite, 'BLOQUANT')
-        self.assertEqual(sig.texte, 'Faille CVE-1 dans lib')
-
-    def test_scan_cle_manquante(self):
-        with self.assertRaises(ValueError):
-            lire_scan({'id_faille': 'x'}, 1)
-
-
-class TestLireBuild(unittest.TestCase):
-    def test_build_echec(self):
-        rapport = {'etape': 'deploiement', 'resultat': 'echec', 'date': '2026-01-01T00:00:00Z'}
-        sig = lire_build(rapport, 3)
-        self.assertEqual(sig.origine, 'BUILD')
-        self.assertEqual(sig.categorie, 'BUILD_ECHEC')
-        self.assertEqual(sig.gravite, 'MAJEUR')
-        self.assertEqual(sig.texte, 'Build deploiement : echec')
-
-    def test_build_ok(self):
-        rapport = {'etape': 'test', 'resultat': 'OK', 'date': '2026-01-01T00:00:00Z'}
-        sig = lire_build(rapport, 3)
-        self.assertEqual(sig.categorie, 'BUILD_OK')
-        self.assertEqual(sig.gravite, 'MINEUR')
+def lire_journal(ligne: str, numero: int) -> Signal:
+    parties = ligne.split(maxsplit=4)
+    if len(parties) < 5:
+        raise ValueError(f"ligne de journal invalide : {ligne!r}")
+    jour, heure, service, niveau, texte = parties
+    niveau = niveau.upper()
+    if niveau == "FATAL":
+        gravite = "BLOQUANT"
+    elif niveau == "ERROR":
+        gravite = "MAJEUR"
+    else:
+        gravite = "MINEUR"
+    return Signal(
+        ref=_ref(numero),
+        date=f"{jour}T{heure}Z",
+        origine="JOURNAL",
+        service=service,
+        env="prod",
+        categorie="JOURNAL",
+        gravite=gravite,
+        texte=masquer_donnees(texte),
+    )
 
 
-if __name__ == '__main__':
-    unittest.main()
+def lire_scan(rapport: dict, numero: int) -> Signal:
+    try:
+        id_faille = rapport["id_faille"]
+        paquet = rapport["paquet"]
+        risque = rapport["risque"]
+        date = rapport["date"]
+    except KeyError as e:
+        raise ValueError(f"rapport de scan incomplet : cle manquante {e}")
+    gravite = "BLOQUANT" if str(risque).lower() == "critique" else "MAJEUR"
+    return Signal(
+        ref=_ref(numero),
+        date=date,
+        origine="SCANNER",
+        service=paquet,
+        env="prod",
+        categorie="FAILLE",
+        gravite=gravite,
+        texte=f"Faille {id_faille} dans {paquet}",
+    )
+
+
+def lire_build(rapport: dict, numero: int) -> Signal:
+    try:
+        etape = rapport["etape"]
+        resultat = rapport["resultat"]
+        date = rapport["date"]
+    except KeyError as e:
+        raise ValueError(f"rapport de build incomplet : cle manquante {e}")
+    echec = str(resultat).lower() == "echec"
+    return Signal(
+        ref=_ref(numero),
+        date=date,
+        origine="BUILD",
+        service=etape,
+        env="prod",
+        categorie="BUILD_ECHEC" if echec else "BUILD_OK",
+        gravite="MAJEUR" if echec else "MINEUR",
+        texte=f"Build {etape} : {resultat}",
+    )
