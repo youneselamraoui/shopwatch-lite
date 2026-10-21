@@ -40,7 +40,7 @@ def evaluer(sig: Signal, nb_incidents: int = 0) -> str:
     """
     Passe en BLOQUANT à partir de 4 incidents, sinon conserve la gravité d'origine.
     """
-    if nb_incidents > 100:
+    if nb_incidents >= 4:
         return "BLOQUANT"
     return sig.gravite
 
