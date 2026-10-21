@@ -22,3 +22,19 @@ def sig(
     )
 
 
+class TestAnalyse(unittest.TestCase):
+
+    def test_repete(self):
+        vus = set()
+        s = sig()
+        self.assertFalse(est_repete(s, vus))
+        self.assertTrue(est_repete(s, vus))
+
+    def test_evaluer_panne_en_boucle(self):
+        s = sig()
+        self.assertEqual(evaluer(s, 4), "BLOQUANT")
+        self.assertEqual(evaluer(s, 3), "MAJEUR")
+
+
+if __name__ == "__main__":
+    unittest.main()
